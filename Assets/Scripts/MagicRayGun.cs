@@ -30,6 +30,11 @@ public class MagicRayGun : MonoBehaviour
     private bool isRotating = false;
     private bool showBeam = false;
     
+    // New control variables
+    private bool leftClickDown = false;
+    private float leftClickStartTime = 0f;
+    private const float throwHoldTime = 0.7f; // Time to hold for throw
+    
     void Start()
     {
         playerCamera = GetComponent<Camera>();
@@ -73,33 +78,17 @@ public class MagicRayGun : MonoBehaviour
         showBeam = (heldObject != null);
         UpdateBeamVisual();
         
-        // Left click to grab/release
-        if (Input.GetMouseButtonDown(0))
-        {
-            if (heldObject == null)
-            {
-                TryGrabObject();
-            }
-            else
-            {
-                ReleaseObject();
-            }
-        }
+        // Handle left click: grab/drop/throw logic
+        HandleLeftClick();
         
-        // Right click to throw
+        // Right click to toggle sticky/weld mode
         if (Input.GetMouseButtonDown(1) && heldObject != null)
         {
-            ThrowObject();
+            ToggleStickyMode();
         }
         
         // Hold R to rotate
         isRotating = Input.GetKey(KeyCode.R);
-        
-        // E to make held object sticky
-        if (Input.GetKeyDown(KeyCode.E) && heldObject != null)
-        {
-            ToggleStickyMode();
-        }
         
         // Scroll to adjust distance
         if (heldObject != null)
@@ -115,6 +104,47 @@ public class MagicRayGun : MonoBehaviour
         if (heldObject != null)
         {
             UpdateHeldObject();
+        }
+    }
+    
+    void HandleLeftClick()
+    {
+        // Left click DOWN - start action
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (heldObject == null)
+            {
+                // No object held - try to grab one
+                TryGrabObject();
+            }
+            else
+            {
+                // Object already held - start timer for throw vs drop
+                leftClickDown = true;
+                leftClickStartTime = Time.time;
+            }
+        }
+        
+        // Left click UP - complete action (only when we started a timer)
+        if (Input.GetMouseButtonUp(0) && leftClickDown)
+        {
+            leftClickDown = false;
+            
+            if (heldObject != null)
+            {
+                float holdDuration = Time.time - leftClickStartTime;
+                
+                if (holdDuration >= throwHoldTime)
+                {
+                    Debug.Log($"Throwing {heldObject.name} (held for {holdDuration:F2}s)");
+                    ThrowObject();
+                }
+                else
+                {
+                    Debug.Log($"Dropping {heldObject.name} (quick release)");
+                    ReleaseObject();
+                }
+            }
         }
     }
     
@@ -196,6 +226,23 @@ public class MagicRayGun : MonoBehaviour
     {
         Vector3 targetPosition = playerCamera.transform.position + playerCamera.transform.forward * holdDistance;
         
+        // Add shake effect when in throw mode (holding left click for 1+ seconds)
+        if (leftClickDown && Time.time - leftClickStartTime >= throwHoldTime)
+        {
+            // Shake intensity increases over time
+            float shakeIntensity = 0.05f + (Time.time - leftClickStartTime - throwHoldTime) * 0.02f;
+            shakeIntensity = Mathf.Clamp(shakeIntensity, 0.05f, 0.15f);
+            
+            // Apply random shake offset
+            Vector3 shakeOffset = new Vector3(
+                Mathf.Sin(Time.time * 15f) * shakeIntensity,
+                Mathf.Sin(Time.time * 12f) * shakeIntensity,
+                Mathf.Sin(Time.time * 18f) * shakeIntensity
+            );
+            
+            targetPosition += shakeOffset;
+        }
+        
         if (isRotating)
         {
             // Rotate object with mouse while holding R
@@ -232,7 +279,7 @@ public class MagicRayGun : MonoBehaviour
                 rend.material.color = Color.yellow;
             }
             
-            Debug.Log($"Made {heldObject.name} sticky!");
+            Debug.Log($"Made {heldObject.name} sticky! (Right-click to toggle)");
         }
         else
         {
